@@ -29,9 +29,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run alert job (with Binance base-url debug)
+      - name: Run alert job
         env:
+          # Market-data endpoint (GitHub runners için daha stabil)
           BINANCE_BASE_URL: https://data-api.binance.vision
+
+          # Logging (set to DEBUG when troubleshooting)
+          LOG_LEVEL: INFO
 
           SYMBOL: ${{ vars.SYMBOL || 'BTCUSDT' }}
           INTERVAL: ${{ vars.INTERVAL || '1h' }}
@@ -45,9 +49,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          echo "GIT_SHA=$(git rev-parse --short HEAD)"
-          echo "BINANCE_BASE_URL=$BINANCE_BASE_URL"
-          python -c "from src.ingestion import binance_spot as b; print('get_base_url() ->', b.get_base_url())"
           python -m src.jobs.run_and_alert
 
       - name: Commit updated state (if changed)
