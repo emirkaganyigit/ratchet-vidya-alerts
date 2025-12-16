@@ -2,8 +2,7 @@ name: Scheduled Alerts
 
 on:
   schedule:
-    # Every hour at minute 5 (UTC). Adjust as needed.
-    - cron: "5 * * * *"
+    - cron: "5 * * * *"   # Her saat UTC xx:05
   workflow_dispatch: {}
 
 permissions:

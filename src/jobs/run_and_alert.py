@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-
 from dotenv import load_dotenv
 
 from src.jobs.fetch_binance_and_run import run
@@ -13,8 +12,7 @@ STATE_PATH_DEFAULT = "state/alerts_state.json"
 
 
 def main():
-    # Allow .env locally; harmless in GitHub Actions (env already present)
-    load_dotenv()
+    load_dotenv()  # local dev için; Actions'ta da zararsız
 
     symbol = os.getenv("SYMBOL", "BTCUSDT")
     interval = os.getenv("INTERVAL", "1h")
@@ -47,29 +45,22 @@ def main():
 
     last = out.loc[sig_mask].tail(1)
     t = last.index[0]
-    is_long = bool(last["long_signal"].iloc[0])
-    sig_type = "LONG" if is_long else "SHORT"
+    sig_type = "LONG" if bool(last["long_signal"].iloc[0]) else "SHORT"
 
-    # Use open_time as stable bar identifier
+    # bar kimliği olarak open_time(ms)
     open_time = int(candles.loc[t, "open_time"])
     vma = float(last["vma"].iloc[0])
     T = float(last["T"].iloc[0])
     dir_after = str(last["dir"].iloc[0])
 
-    # Load persistent state
     state = load_state(state_path)
     prev = get_last_sent(state, symbol, interval)
-
-    current_payload = {
-        "open_time": open_time,
-        "signal_type": sig_type,
-    }
+    current_payload = {"open_time": open_time, "signal_type": sig_type}
 
     if prev == current_payload:
         print(f"No new alert. Last sent already: {prev}")
         return
 
-    # Send alert (optional—only if env vars exist)
     msg = (
         f"[{symbol.upper()} {interval}] New signal: {sig_type}\n"
         f"Time(UTC): {t}\n"
@@ -80,10 +71,8 @@ def main():
     )
     send_telegram_message(msg)
 
-    # Update state
     set_last_sent(state, symbol, interval, current_payload)
     save_state(state_path, state)
-
     print(f"Alert sent and state updated: {current_payload}")
 
 
