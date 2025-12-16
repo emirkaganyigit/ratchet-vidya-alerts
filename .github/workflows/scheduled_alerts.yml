@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: scheduled-alerts-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   run-alerts:
     runs-on: ubuntu-latest
