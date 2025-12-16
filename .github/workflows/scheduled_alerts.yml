@@ -2,7 +2,8 @@ name: Scheduled Alerts
 
 on:
   schedule:
-    - cron: "5 * * * *"   # Her saat UTC xx:05
+    # Every hour at minute 5 (UTC). Adjust as needed.
+    - cron: "5 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -27,6 +28,9 @@ jobs:
 
       - name: Run alert job
         env:
+          # Critical: avoid 451 on GitHub runners by using market-data endpoint
+          BINANCE_BASE_URL: https://data-api.binance.vision
+
           SYMBOL: ${{ vars.SYMBOL || 'BTCUSDT' }}
           INTERVAL: ${{ vars.INTERVAL || '1h' }}
           LOOKBACK_DAYS: ${{ vars.LOOKBACK_DAYS || '30' }}

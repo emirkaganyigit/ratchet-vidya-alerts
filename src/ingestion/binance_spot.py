@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -8,7 +9,19 @@ import pandas as pd
 import requests
 
 
-BASE_URL = "https://api.binance.com"
+# Binance base URLs
+BINANCE_MAIN_API = "https://api.binance.com"
+BINANCE_MARKET_DATA_API = "https://data-api.binance.vision"  # market-data-only, Actions için daha stabil
+
+
+def get_base_url() -> str:
+    """
+    Allows overriding via env:
+      BINANCE_BASE_URL=https://data-api.binance.vision  (recommended for GitHub Actions)
+      BINANCE_BASE_URL=https://api.binance.com          (optional for local)
+    Default is market-data endpoint to avoid 451 in some environments.
+    """
+    return (os.getenv("BINANCE_BASE_URL", BINANCE_MARKET_DATA_API) or BINANCE_MARKET_DATA_API).strip()
 
 
 @dataclass(frozen=True)
@@ -61,9 +74,13 @@ def _parse_klines(raw: list[list]) -> pd.DataFrame:
 def fetch_klines(req: KlineRequest, session: Optional[requests.Session] = None) -> pd.DataFrame:
     """
     Fetch one page of klines (max 1000).
+    Uses BINANCE_BASE_URL (default market-data endpoint) and retries on 451 with market-data endpoint.
     """
     s = session or requests.Session()
-    url = f"{BASE_URL}/api/v3/klines"
+
+    base_url = get_base_url().rstrip("/")
+    url = f"{base_url}/api/v3/klines"
+
     params = {
         "symbol": req.symbol.upper(),
         "interval": req.interval,
@@ -75,6 +92,13 @@ def fetch_klines(req: KlineRequest, session: Optional[requests.Session] = None) 
         params["endTime"] = int(req.end_time_ms)
 
     r = s.get(url, params=params, timeout=20)
+
+    # Some environments (e.g., GitHub-hosted runners) may hit 451 on api.binance.com.
+    # If that happens, retry once using the market-data endpoint.
+    if r.status_code == 451 and base_url != BINANCE_MARKET_DATA_API.rstrip("/"):
+        fallback_url = f"{BINANCE_MARKET_DATA_API.rstrip('/')}/api/v3/klines"
+        r = s.get(fallback_url, params=params, timeout=20)
+
     r.raise_for_status()
     raw = r.json()
     return _parse_klines(raw)
