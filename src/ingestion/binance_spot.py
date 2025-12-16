@@ -81,6 +81,7 @@ def fetch_klines(req, session=None):
         params["endTime"] = int(req.end_time_ms)
 
     url = f"{base_url}/api/v3/klines"
+    print(f"[binance_spot] GET {url} params={params}")
     r = s.get(url, params=params, timeout=20)
 
     # Eğer biri yanlışlıkla BINANCE_BASE_URL=api.binance.com verdiyse bile,
