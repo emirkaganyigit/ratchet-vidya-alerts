@@ -90,7 +90,9 @@ def fetch_klines(req, session=None):
         r = s.get(f"{BINANCE_MARKET_DATA_API}/api/v3/klines", params=params, timeout=20)
 
     r.raise_for_status()
-    return r.json()
+    raw = r.json()
+    return _parse_klines(raw)
+
 
 
 
