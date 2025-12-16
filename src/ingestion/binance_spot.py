@@ -8,14 +8,22 @@ from typing import Optional
 import pandas as pd
 import requests
 
+from src.utils.logging import get_logger
 
-# Binance base URLs
+logger = get_logger("binance_spot")
+
 BINANCE_MAIN_API = "https://api.binance.com"
-BINANCE_MARKET_DATA_API = "https://data-api.binance.vision"  # market-data-only, Actions için daha stabil
+BINANCE_MARKET_DATA_API = "https://data-api.binance.vision"  # Actions için daha stabil
 
 
 def get_base_url() -> str:
-    # Default: market-data endpoint (Actions için daha stabil)
+    """
+    Env override:
+      BINANCE_BASE_URL=https://data-api.binance.vision (recommended)
+      BINANCE_BASE_URL=https://api.binance.com         (optional local)
+
+    Default: market-data endpoint
+    """
     return (os.getenv("BINANCE_BASE_URL", BINANCE_MARKET_DATA_API) or BINANCE_MARKET_DATA_API).strip()
 
 
@@ -29,47 +37,51 @@ class KlineRequest:
 
 
 def _parse_klines(raw: list[list]) -> pd.DataFrame:
-    """
-    Binance /api/v3/klines returns list of lists:
-    [
-      [
-        0 openTime, 1 open, 2 high, 3 low, 4 close, 5 volume,
-        6 closeTime, 7 quoteAssetVolume, 8 numberOfTrades,
-        9 takerBuyBaseVolume, 10 takerBuyQuoteVolume, 11 ignore
-      ], ...
-    ]
-    """
     if not raw:
         return pd.DataFrame(
             columns=["open_time", "open", "high", "low", "close", "volume", "close_time"]
         )
 
-    df = pd.DataFrame(raw, columns=[
-        "open_time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "num_trades",
-        "taker_buy_base_volume", "taker_buy_quote_volume", "ignore"
-    ])
+    df = pd.DataFrame(
+        raw,
+        columns=[
+            "open_time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "quote_asset_volume",
+            "num_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ],
+    )
 
-    # Keep only needed columns for this project
     df = df[["open_time", "open", "high", "low", "close", "volume", "close_time"]]
 
-    # Types
     df["open_time"] = df["open_time"].astype("int64")
     df["close_time"] = df["close_time"].astype("int64")
     for c in ["open", "high", "low", "close", "volume"]:
         df[c] = df[c].astype("float64")
 
-    # Helpful time index (UTC)
     df["open_dt"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
     df = df.set_index("open_dt").sort_index()
-
     return df
 
 
-def fetch_klines(req, session=None):
+def fetch_klines(req: KlineRequest, session: Optional[requests.Session] = None) -> pd.DataFrame:
+    """
+    Fetch one page of klines (<=1000) and return as DataFrame.
+    Retries once with market-data endpoint if a 451 is returned.
+    """
     s = session or requests.Session()
 
     base_url = get_base_url().rstrip("/")
+    url = f"{base_url}/api/v3/klines"
+
     params = {
         "symbol": req.symbol.upper(),
         "interval": req.interval,
@@ -80,20 +92,19 @@ def fetch_klines(req, session=None):
     if req.end_time_ms is not None:
         params["endTime"] = int(req.end_time_ms)
 
-    url = f"{base_url}/api/v3/klines"
-    print(f"[binance_spot] GET {url} params={params}")
+    logger.debug("GET %s params=%s", url, params)
     r = s.get(url, params=params, timeout=20)
 
     # Eğer biri yanlışlıkla BINANCE_BASE_URL=api.binance.com verdiyse bile,
     # 451 gördüğümüzde market-data endpoint'e 1 kez fallback yap.
-    if r.status_code == 451 and base_url != BINANCE_MARKET_DATA_API:
-        r = s.get(f"{BINANCE_MARKET_DATA_API}/api/v3/klines", params=params, timeout=20)
+    if r.status_code == 451 and base_url != BINANCE_MARKET_DATA_API.rstrip("/"):
+        fallback_url = f"{BINANCE_MARKET_DATA_API}/api/v3/klines"
+        logger.warning("451 from %s. Retrying with %s", base_url, BINANCE_MARKET_DATA_API)
+        r = s.get(fallback_url, params=params, timeout=20)
 
     r.raise_for_status()
     raw = r.json()
     return _parse_klines(raw)
-
-
 
 
 def fetch_klines_range(
@@ -105,8 +116,8 @@ def fetch_klines_range(
     polite_sleep_s: float = 0.2,
 ) -> pd.DataFrame:
     """
-    Fetch klines from start_time_ms up to end_time_ms (or "now" if None),
-    paginating with startTime (limit <= 1000).
+    Fetch klines by paginating with startTime until endTime (or until no data).
+    Returns DataFrame indexed by open_dt (UTC).
     """
     sess = requests.Session()
     all_parts: list[pd.DataFrame] = []
@@ -116,27 +127,27 @@ def fetch_klines_range(
 
     while True:
         df = fetch_klines(KlineRequest(symbol, interval, cur, end, limit=limit), session=sess)
+
         if df.empty:
             break
 
         all_parts.append(df)
 
-        # Next page: move startTime beyond the last open_time to avoid duplicates
         last_open_time = int(df["open_time"].iloc[-1])
         next_cur = last_open_time + 1
+
         if next_cur == cur:
             break
+
         cur = next_cur
 
-        # Stop if we likely reached the end
         if end is not None and last_open_time >= end:
             break
 
-        time.sleep(polite_sleep_s)
-
-        # Safety: if returned less than limit, probably end of range
         if len(df) < limit:
             break
+
+        time.sleep(polite_sleep_s)
 
     if not all_parts:
         return _parse_klines([])
