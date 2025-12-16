@@ -2,7 +2,6 @@ name: Scheduled Alerts
 
 on:
   schedule:
-    # Every hour at minute 5 (UTC). Adjust as needed.
     - cron: "5 * * * *"
   workflow_dispatch: {}
 
@@ -26,9 +25,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run alert job
+      - name: Run alert job (with Binance base-url debug)
         env:
-          # Critical: avoid 451 on GitHub runners by using market-data endpoint
           BINANCE_BASE_URL: https://data-api.binance.vision
 
           SYMBOL: ${{ vars.SYMBOL || 'BTCUSDT' }}
@@ -43,6 +41,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          echo "GIT_SHA=$(git rev-parse --short HEAD)"
+          echo "BINANCE_BASE_URL=$BINANCE_BASE_URL"
+          python -c "from src.ingestion import binance_spot as b; print('get_base_url() ->', b.get_base_url())"
           python -m src.jobs.run_and_alert
 
       - name: Commit updated state (if changed)
@@ -56,10 +57,3 @@ jobs:
           git add state/alerts_state.json
           git commit -m "chore: update alert state"
           git push
-      - name: Debug Binance base url
-        env:
-          BINANCE_BASE_URL: https://data-api.binance.vision
-        run: |
-          echo "BINANCE_BASE_URL=$BINANCE_BASE_URL"
-          python -c "from src.ingestion import binance_spot as b; print('get_base_url() ->', b.get_base_url())"
-
