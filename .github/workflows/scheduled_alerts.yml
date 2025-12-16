@@ -31,13 +31,12 @@ jobs:
 
       - name: Run alert job
         env:
-          # Market-data endpoint (GitHub runners için daha stabil)
           BINANCE_BASE_URL: https://data-api.binance.vision
-
-          # Logging (set to DEBUG when troubleshooting)
           LOG_LEVEL: INFO
 
+          SYMBOLS: ${{ vars.SYMBOLS || '' }}
           SYMBOL: ${{ vars.SYMBOL || 'BTCUSDT' }}
+
           INTERVAL: ${{ vars.INTERVAL || '1h' }}
           LOOKBACK_DAYS: ${{ vars.LOOKBACK_DAYS || '30' }}
           VMA_LENGTH: ${{ vars.VMA_LENGTH || '20' }}
@@ -50,6 +49,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python -m src.jobs.run_and_alert
+
 
       - name: Commit updated state (if changed)
         run: |
