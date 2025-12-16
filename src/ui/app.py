@@ -1,7 +1,9 @@
+import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
 
 from src.jobs.fetch_binance_and_run import run
+from src.analysis.backtest import backtest_next_open, summary_stats
 
 
 st.set_page_config(page_title="ratchet-vidya-alerts", layout="wide")
@@ -19,9 +21,11 @@ with col3:
     momentum_length = st.slider("momentum_length", 2, 40, 9)
     initial_dir = st.selectbox("initial_dir", ["LONG", "SHORT"], index=0)
 
+fee_bps = st.slider("fee_bps (transaction cost)", 0.0, 50.0, 10.0)
+
 if st.button("Fetch & Compute (Binance)"):
     with st.spinner("Fetching OHLCV and computing signals..."):
-        out = run(
+        candles, out = run(
             symbol=symbol,
             interval=interval,
             lookback_days=lookback_days,
@@ -31,27 +35,64 @@ if st.button("Fetch & Compute (Binance)"):
             initial_dir=initial_dir,
         )
 
-    if out.empty:
+    if out.empty or candles.empty:
         st.warning("No data returned.")
         st.stop()
 
-    # Plot exactly TWO LINES: VMA and T (+ markers)
+    # ---------- Indicator Plot (exactly two lines: VMA and T) ----------
     fig = go.Figure()
-    fig.add_trace(go.Scatter(y=out["vma"], mode="lines", name="VMA (VIDYA)"))
-    fig.add_trace(go.Scatter(y=out["T"], mode="lines", name="T (ratcheted)"))
+    fig.add_trace(go.Scatter(
+        x=out.index, y=out["vma"],
+        mode="lines",
+        name="VMA (VIDYA)"
+    ))
+    fig.add_trace(go.Scatter(
+        x=out.index, y=out["T"],
+        mode="lines",
+        name="T (ratcheted)"
+    ))
 
-    long_y = out["vma"].where(out["long_signal"])
-    short_y = out["vma"].where(out["short_signal"])
+    # Signal markers (not lines)
+    long_mask = out["long_signal"]
+    short_mask = out["short_signal"]
 
-    fig.add_trace(go.Scatter(y=long_y, mode="markers", name="LONG signal"))
-    fig.add_trace(go.Scatter(y=short_y, mode="markers", name="SHORT signal"))
+    fig.add_trace(go.Scatter(
+        x=out.index[long_mask],
+        y=out.loc[long_mask, "vma"],
+        mode="markers",
+        name="LONG signal"
+    ))
+    fig.add_trace(go.Scatter(
+        x=out.index[short_mask],
+        y=out.loc[short_mask, "vma"],
+        mode="markers",
+        name="SHORT signal"
+    ))
 
     fig.update_layout(height=520, margin=dict(l=10, r=10, t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
+    # ---------- Signals Table ----------
     st.subheader("Last signals")
-    signals = out.loc[out["long_signal"] | out["short_signal"], ["vma", "T", "dir"]].copy()
-    signals["type"] = ["LONG" if x else "SHORT" for x in out.loc[out["long_signal"] | out["short_signal"], "long_signal"].tolist()]
+    sig_mask = long_mask | short_mask
+    signals = out.loc[sig_mask, ["vma", "T", "dir"]].copy()
+    signals["type"] = np.where(out.loc[sig_mask, "long_signal"], "LONG", "SHORT")
     st.dataframe(signals.tail(30), use_container_width=True)
+
+    # ---------- Backtest (analysis) ----------
+    bt = backtest_next_open(candles, out, fee_bps=fee_bps)
+    stats = summary_stats(bt)
+
+    st.subheader("Backtest Summary (next-open)")
+    st.write(stats)
+
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        x=bt.index, y=bt["equity"],
+        mode="lines",
+        name="Equity"
+    ))
+    fig2.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10))
+    st.plotly_chart(fig2, use_container_width=True)
 
     st.caption("Signals use only VMA–T crossover. Price is used only to compute VIDYA (VMA).")
