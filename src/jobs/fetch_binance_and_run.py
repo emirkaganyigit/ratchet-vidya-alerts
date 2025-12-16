@@ -1,4 +1,7 @@
 from __future__ import annotations
+import os
+from src.utils.candles import drop_unclosed_last_candle
+
 
 import time
 import pandas as pd
@@ -27,6 +30,9 @@ def run(
     start = end - int(lookback_days * 24 * 60 * 60 * 1000)
 
     candles_raw = fetch_klines_range(symbol, interval, start_time_ms=start, end_time_ms=end)
+    safety_ms = int(os.getenv("CANDLE_CLOSE_SAFETY_MS", "2000"))
+    candles_raw = drop_unclosed_last_candle(candles_raw, safety_ms=safety_ms)
+
 
     con = connect(db_path)
     init_schema(con)
