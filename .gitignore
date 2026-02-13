@@ -25,3 +25,7 @@ DB_PATH=data.db
 # Telegram (optional)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+
+state/*
+!state/.gitkeep
+!state/alerts_state.json
