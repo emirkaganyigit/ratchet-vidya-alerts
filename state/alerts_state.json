@@ -1,0 +1,10 @@
+{
+  "BTCUSDT__1h": {
+    "open_time": 1765461600000,
+    "signal_type": "SHORT"
+  },
+  "ETHUSDT__1h": {
+    "open_time": 1765458000000,
+    "signal_type": "SHORT"
+  }
+}
