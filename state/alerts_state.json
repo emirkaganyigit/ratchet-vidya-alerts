@@ -1,7 +1,7 @@
 {
   "BTCUSDT__1h": {
-    "open_time": 1784293200000,
-    "signal_type": "SHORT"
+    "open_time": 1784422800000,
+    "signal_type": "LONG"
   },
   "ETHUSDT__1h": {
     "open_time": 1765458000000,
